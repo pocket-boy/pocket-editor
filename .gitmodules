@@ -1,0 +1,9 @@
+[submodule "lib/SDL"]
+	path = lib/SDL
+	url = https://github.com/libsdl-org/SDL.git
+[submodule "lib/SDL_image"]
+	path = lib/SDL_image
+	url = https://github.com/libsdl-org/SDL_image.git
+[submodule "lib/pocket-compiler"]
+	path = lib/pocket-compiler
+	url = https://github.com/pocket-boy/pocket-compiler.git
