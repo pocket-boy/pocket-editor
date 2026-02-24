@@ -29,10 +29,28 @@ add_subdirectory(lib/SDL_image EXCLUDE_FROM_ALL)
 corrosion_import_crate(MANIFEST_PATH lib/pocket-compiler/Cargo.toml)
 
 # Compile the editor executable.
-add_executable(pocket-editor src/editor.cpp include/compiler.hpp)
+add_executable(
+  pocket-editor
+  src/editor.cpp
+  include/compiler.hpp
+  # Dear ImGui
+  lib/imgui/backends/imgui_impl_sdl3.cpp
+  lib/imgui/backends/imgui_impl_sdl3.h
+  lib/imgui/backends/imgui_impl_sdlgpu3.cpp
+  lib/imgui/backends/imgui_impl_sdlgpu3.h
+  lib/imgui/imgui.h
+  lib/imgui/imgui.cpp
+  lib/imgui/imgui_draw.cpp
+  lib/imgui/imgui_tables.cpp
+  lib/imgui/imgui_widgets.cpp
+  lib/imgui/misc/cpp/imgui_stdlib.cpp
+  lib/imgui/misc/cpp/imgui_stdlib.h)
 
 # Include Pocket Compiler bindings for C++.
 target_include_directories(pocket-editor PRIVATE include)
+
+# Include the Dear ImGui headers.
+target_include_directories(pocket-editor PRIVATE lib/imgui)
 
 # Link to the actual SDL3 libraries.
 target_link_libraries(pocket-editor PRIVATE SDL3::SDL3 SDL3_image::SDL3_image)
