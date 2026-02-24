@@ -36,8 +36,8 @@ add_executable(
   # Dear ImGui
   lib/imgui/backends/imgui_impl_sdl3.cpp
   lib/imgui/backends/imgui_impl_sdl3.h
-  lib/imgui/backends/imgui_impl_sdlgpu3.cpp
-  lib/imgui/backends/imgui_impl_sdlgpu3.h
+  lib/imgui/backends/imgui_impl_sdlrenderer3.cpp
+  lib/imgui/backends/imgui_impl_sdlrenderer3.h
   lib/imgui/imgui.h
   lib/imgui/imgui.cpp
   lib/imgui/imgui_draw.cpp

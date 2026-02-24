@@ -15,3 +15,7 @@ CMakeUserPresets.json
 ## Build files for CMake
 .cache
 /build
+
+## Dear ImGui artifacts
+imgui.ini
+imgui*.ini
