@@ -66,10 +66,18 @@ int main(void) {
   ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
   ImGui_ImplSDLRenderer3_Init(renderer);
 
+  TextEditor editor;
+  auto lang = TextEditor::LanguageDefinition::CPlusPlus();
+  editor.SetLanguageDefinition(lang);
+  editor.SetPalette(TextEditor::GetLightPalette());
+  editor.SetText("\x2f\x2f Open a file in the menu to begin");
+  editor.SetHandleKeyboardInputs(true);
+  SDL_StartTextInput(window);
   // Sentinel value for event loop.
   bool done = false;
   // Main event loop implementation.
   while (!done) {
+    sem_wait(&renderSemaphore);
     // Handle for tracking SDL events within event loop.
     SDL_Event event;
 
@@ -77,6 +85,21 @@ int main(void) {
     while (SDL_PollEvent(&event)) {
       // ImGui needs to be synchronised against SDL window events.
       ImGui_ImplSDL3_ProcessEvent(&event);
+
+      //Make Shift-Enter enter a new line, because I do this when typing brackets and IGTE doesn't do it by default.
+      if(event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_RETURN && event.key.mod & (SDL_KMOD_LSHIFT|SDL_KMOD_RSHIFT)){
+        /*SDL_Event manufacturedDown;
+        SDL_Event manufacturedUp;
+        SDL_memset(&manufacturedDown, 0, sizeof(manufacturedDown));
+        SDL_memset(&manufacturedUp, 0, sizeof(manufacturedUp));
+        manufacturedDown.type = SDL_EVENT_KEY_DOWN;
+        manufacturedUp.type = SDL_EVENT_KEY_UP;
+        manufacturedUp.key.key =
+          manufacturedDown.key.key = SDLK_RETURN;
+        SDL_PushEvent(&manufacturedDown);
+        SDL_PushEvent(&manufacturedUp);*/
+        editor.InsertText("\n");
+      }
       // Check for any exit requests and set sentinel accordingly.
       if (event.type == SDL_EVENT_QUIT ||
           event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
@@ -90,9 +113,35 @@ int main(void) {
     ImGui::NewFrame();
 
     // Begin a new window within the SDl window.
-    ImGui::Begin("Hello, World!");
+    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+    ImGui::SetNextWindowSize(io.DisplaySize);
+    ImGui::Begin("Hello, World!", NULL, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove);
+    ImGui::SetWindowSize(ImVec2(300, 300), ImGuiCond_FirstUseEver);
+
+    // Have a file menu for save and open
+    if(ImGui::BeginMenuBar()){
+      if(ImGui::BeginMenu("File")){
+        if(ImGui::MenuItem("Open...", "Ctrl-O")){
+          SDL_ShowOpenFileDialog(fileopen_callback, &editor, window, nullptr, 0, nullptr, false);
+        }
+        if(ImGui::MenuItem("Save", "Ctrl-S")){
+          if(openpath == nullptr){
+            SDL_ShowSaveFileDialog(filesaveas_callback, &editor, window, nullptr, 0, nullptr);
+          } else {
+            write_to_path(openpath, editor.GetText());
+          }
+        }
+        if(ImGui::MenuItem("Save As...", "Ctrl-Shift-S")){
+          SDL_ShowSaveFileDialog(filesaveas_callback, &editor, window, nullptr, 0, nullptr);
+        }
+        ImGui::EndMenu();
+      }
+      ImGui::EndMenuBar();
+    }
+
     // Display some standard text, called from the Rust compiler.
     ImGui::Text("%s", greet());
+    editor.Render("TextEditor");
     // Signal to ImGui the end of the current window.
     ImGui::End();
 
@@ -102,6 +151,7 @@ int main(void) {
     SDL_RenderClear(renderer);
     ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
     SDL_RenderPresent(renderer);
+    sem_post(&renderSemaphore);
   }
 
   // Cleanup all relevant ImGui subsystems.
