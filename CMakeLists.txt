@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.28)
 
+
+
 project(pocket-editor VERSION 0.1.0)
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY, "${CMAKE_SOURCE_DIR}/bin")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -44,7 +48,12 @@ add_executable(
   lib/imgui/imgui_tables.cpp
   lib/imgui/imgui_widgets.cpp
   lib/imgui/misc/cpp/imgui_stdlib.cpp
-  lib/imgui/misc/cpp/imgui_stdlib.h)
+  lib/imgui/misc/cpp/imgui_stdlib.h
+  # ImGuiColorTextEdit
+  lib/ImGuiColorTextEdit/TextEditor.cpp
+  lib/ImGuiColorTextEdit/TextEditor.h
+)
+
 
 # Include Pocket Compiler bindings for C++.
 target_include_directories(pocket-editor PRIVATE include)
@@ -52,8 +61,12 @@ target_include_directories(pocket-editor PRIVATE include)
 # Include the Dear ImGui headers.
 target_include_directories(pocket-editor PRIVATE lib/imgui)
 
+# Include the ImguiColorTextEdit headers.
+target_include_directories(pocket-editor PRIVATE lib/imguicolortextedit)
+
 # Link to the actual SDL3 libraries.
 target_link_libraries(pocket-editor PRIVATE SDL3::SDL3 SDL3_image::SDL3_image)
 
 # Link against the Pocket Compiler.
 target_link_libraries(pocket-editor PUBLIC compiler_ffi)
+
