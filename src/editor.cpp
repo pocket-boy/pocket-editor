@@ -1,17 +1,33 @@
 #include "SDL3/SDL_init.h"
 #include "SDL3/SDL_render.h"
+#include "SDL3/SDL_dialog.h"
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_sdlrenderer3.h"
 #include "compiler.hpp"
 #include "imgui.h"
+#include <semaphore.h>
+#include <fstream>
+#include <fstream>
 #include <iostream>
-
+#include <stdlib.h>
+#include "TextEditor.h"
+#define SDL_HINT_FILE_DIALOG_DRIVER "zenity"
 // Constant definition for default window width.
 #define WIN_WIDTH (160 * 4)
 // Constant definition for default window height.
 #define WIN_HEIGHT (144 * 4)
-
+static void SDLCALL fileopen_callback(void* userdata, const char* const* filelist, int filter);
+static void SDLCALL filesaveas_callback(void* userdata, const char* const* filelist, int filter);
+static void write_to_path(const char* const path, std::string text);
+// Semaphore held during callbacks and render loop, to synchonize execution of callback functions.
+sem_t renderSemaphore;
+char* openpath;
 int main(void) {
+  //Initialize the semaphore before any code, non-process shared with a initial value of 1
+  if(sem_init(&renderSemaphore, 0, 1)){
+    std::cerr << "Sem issue";
+    return 1;
+  }
   // SDL windowing handle.
   SDL_Window *window;
   // SDL rendering handle.
@@ -33,7 +49,6 @@ int main(void) {
               << "\n";
     return 1;
   }
-
   // Set the default window position and display.
   SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
   SDL_ShowWindow(window);
@@ -100,4 +115,53 @@ int main(void) {
   SDL_Quit();
 
   return 0;
+}
+static void SDLCALL fileopen_callback(void* userdata, const char* const* filelist, int filter){
+  sem_wait(&renderSemaphore);
+  if(filelist == nullptr){
+    std::cerr << "SDL error when opening file prompt: " << SDL_GetError() << std::endl;
+    sem_post(&renderSemaphore);
+    return;
+  }
+  if(*filelist == nullptr || *filelist == ""){
+    std::cerr << "Someone canceled..." << std::endl;
+    sem_post(&renderSemaphore);
+    return;
+  }
+  std::ifstream file(filelist[0]);
+  if(file){
+    std::ostringstream file_content;
+    file_content << file.rdbuf();
+    (*((TextEditor *)userdata)).SetText(file_content.str());
+  } else {
+    std::cerr << "Can't open the file that is at \"" << filelist[0] << "\".";
+  }
+  sem_post(&renderSemaphore);
+  return;
+}
+static void SDLCALL filesaveas_callback(void* userdata, const char* const* filelist, int filter){
+  sem_wait(&renderSemaphore);
+  if(filelist == nullptr) {
+    std::cerr << "SDL error when opening file prompt: " << SDL_GetError() << std::endl;
+    sem_post(&renderSemaphore);
+    return;
+  }
+  if(*filelist == nullptr || *filelist == ""){
+    std::cerr << "Someone canceled..." << std::endl;
+    sem_post(&renderSemaphore);
+    return;
+  }
+  write_to_path(filelist[0], (*((TextEditor *)userdata)).GetText());
+  free(openpath);
+  openpath = (char*)malloc(sizeof(char) * (strlen(filelist[0]) + 1));
+  strcpy(openpath, filelist[0]);
+  sem_post(&renderSemaphore);
+}
+static void write_to_path(const char* const path, std::string text){
+  std::ofstream file(path);
+  if(file){
+    file << text;
+  } else {
+    std::cerr << "Unable to write to the file that is at \"" << path << "\".";
+  }
 }
