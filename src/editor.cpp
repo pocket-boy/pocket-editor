@@ -3,7 +3,6 @@
 #include "SDL3/SDL_dialog.h"
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_sdlrenderer3.h"
-#include "compiler.hpp"
 #include "imgui.h"
 #include <semaphore.h>
 #include <fstream>
@@ -140,7 +139,6 @@ int main(void) {
     }
 
     // Display some standard text, called from the Rust compiler.
-    ImGui::Text("%s", greet());
     editor.Render("TextEditor");
     // Signal to ImGui the end of the current window.
     ImGui::End();
