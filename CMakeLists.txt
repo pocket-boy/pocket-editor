@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.28)
 
-
-
 project(pocket-editor VERSION 0.1.0)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY, "${CMAKE_SOURCE_DIR}/bin")
@@ -36,6 +34,7 @@ corrosion_import_crate(MANIFEST_PATH lib/pocket-compiler/Cargo.toml)
 add_executable(
   pocket-editor
   src/editor.cpp
+  src/compiler.cpp
   include/compiler.hpp
   # Dear ImGui
   lib/imgui/backends/imgui_impl_sdl3.cpp
@@ -50,10 +49,8 @@ add_executable(
   lib/imgui/misc/cpp/imgui_stdlib.cpp
   lib/imgui/misc/cpp/imgui_stdlib.h
   # ImGuiColorTextEdit
-  lib/ImGuiColorTextEdit/TextEditor.cpp
-  lib/ImGuiColorTextEdit/TextEditor.h
-)
-
+  lib/imguicolortextedit/TextEditor.cpp
+  lib/imguicolortextedit/TextEditor.h)
 
 # Include Pocket Compiler bindings for C++.
 target_include_directories(pocket-editor PRIVATE include)
@@ -69,4 +66,3 @@ target_link_libraries(pocket-editor PRIVATE SDL3::SDL3 SDL3_image::SDL3_image)
 
 # Link against the Pocket Compiler.
 target_link_libraries(pocket-editor PUBLIC compiler_ffi)
-
