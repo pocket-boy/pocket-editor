@@ -184,7 +184,6 @@ int main(void) {
     if(ImGui::IsItemFocused() && keyUpInFrame && openIndex != -1){
         modifiedPaths[openIndex] = true;
     }
-    editor.Render("TextEditor");
     // Signal to ImGui the end of the current window.
     ImGui::End();
 
