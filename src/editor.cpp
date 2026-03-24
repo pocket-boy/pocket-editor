@@ -4,6 +4,7 @@
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_sdlrenderer3.h"
 #include "imgui.h"
+#include "compiler.hpp"
 #include <semaphore.h>
 #include <fstream>
 #include <fstream>
@@ -27,7 +28,9 @@ std::vector<char*> openPaths;
 std::vector<bool> modifiedPaths;
 std::vector<std::string> contents;
 int openIndex = -1;
+std::string lastCompResult = "";
 int main(void) {
+
   //Initialize the semaphore before any code, non-process shared with a initial value of 1
   if(sem_init(&renderSemaphore, 0, 1)){
     std::cerr << "Sem issue";
@@ -54,10 +57,10 @@ int main(void) {
               << "\n";
     return 1;
   }
+  SDL_SetRenderVSync(renderer, 1);
   // Set the default window position and display.
   SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
   SDL_ShowWindow(window);
-
   // Initialise the Dear ImGui systems and set configuration flags.
   ImGui::CreateContext();
   ImGuiIO &io = ImGui::GetIO();
@@ -74,18 +77,59 @@ int main(void) {
   TextEditor editor;
   TextEditor::LanguageDefinition def;
   def.mAutoIndentation = true;
+  def.mCaseSensitive = true;
   def.mSingleLineComment = "#";
+  def.mCommentStart = "/*";
+  def.mCommentStart = "*/";
 
-  def.mKeywords.insert("data");
-  def.mKeywords.insert("unit");
-  def.mKeywords.insert("u16");
+  def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("(return|def|var|local|const|import|if|for|while|else|match|case|int|u8|u16|let|unit)", TextEditor::PaletteIndex::Keyword));
+  def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("[\\. \\t]([A-Za-z0-9_]+)\\(", TextEditor::PaletteIndex::MethodCall));
+
+  def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("([,;:\\(\\)<>]|->)", TextEditor::PaletteIndex::Punctuation));
+  def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("([A-Z][A-Z0-9_]*?)([\\.,;\\(\\) ]|$)", TextEditor::PaletteIndex::Constant));
+  def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("([A-Z][A-Za-z0-9_]*?)([\\.,;\\(\\) ]|$)", TextEditor::PaletteIndex::TypeName));
+  def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("([^A-Za-z_][0-9]+)", TextEditor::PaletteIndex::NumericalConstant));
+  def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("(render)", TextEditor::PaletteIndex::KnownIdentifier));
+  def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("(\\\"(\\\\.|[^\\\"])*\\\")", TextEditor::PaletteIndex::String));
+  def.mName = "PocketScript";
 
   editor.SetLanguageDefinition(def);
-  editor.SetPalette(TextEditor::GetLightPalette());
+  TextEditor::Palette colors = { {
+    0xff7f7f7f,	// Default
+    0xffd69c56,	// Keyword
+    0xff00ff00,	// Number
+    0xff7070e0,	// String
+    0xff70a0e0, // Char literal
+    0xff6f6f6f, // Punctuation
+    0xff408080,	// Preprocessor
+    0xffaaaaaa, // Identifier
+    0xffa3d653, // Known identifier
+    0xffc040a0, // Preproc identifier
+    0xff00ff00, // Comment (single line)
+    0xffFF8F00, // Comment (multi line)
+    0xff282828, // Background
+    0xffe0e0e0, // Cursor
+    0x80a06020, // Selection
+    0x800020ff, // ErrorMarker
+    0x40f08000, // Breakpoint
+    0xff707000, // Line number
+    0x40000000, // Current line fill
+    0x40808080, // Current line fill (inactive)
+    0x40a0a0a0, // Current line edge
+    0xff996666, //Type Name
+    0xff0088ff, //Constant
+    0xff00ff00, //Numerical Constant
+    0xff00aabb, //Method call
+  } };
+  editor.SetPalette(colors);
   editor.SetText("#Open a file in the menu to begin");
   editor.SetHandleKeyboardInputs(true);
-  editor.SetColorizerEnable(true);
+  //editor.SetColorizerEnable(true);
   SDL_StartTextInput(window);
+
+  CompilerHandle handle;
+  std::unordered_map<std::string, std::string> compiledModules;
+
   // Sentinel value for event loop.
   bool done = false;
   // Main event loop implementation.
@@ -133,6 +177,7 @@ int main(void) {
             SDL_ShowSaveFileDialog(filesaveas_callback, &editor, window, nullptr, 0, nullptr);
           } else {
             write_to_path(openPaths[openIndex], editor.GetText());
+            contents[openIndex] = editor.GetText();
             modifiedPaths[openIndex] = false;
           }
         }
@@ -142,10 +187,22 @@ int main(void) {
         ImGui::EndMenu();
       }
       if(ImGui::BeginMenu("Run")){
-          if (ImGui::MenuItem("Run File", "F6")){
-              //Integrate compiler/interpreter
+        if (ImGui::MenuItem("Run File", "F6")){
+          handle.drop_module(openPaths[openIndex]);
+          std::cout << "File name: " << openPaths[openIndex] << std::endl;
+          std::cout << "File content: " << contents[openIndex] << std::endl;
+          std::cout << "Load result: " << handle.load_module(openPaths[openIndex], contents[openIndex].substr(0, contents[openIndex].size() - 1).c_str()) << std::endl;
+          ResultHandle result = handle.try_build();
+          bool isErr;
+
+          for (auto openPath : openPaths) {
+            StringHandle resultStringHandle = result.module(openPaths[openIndex], &isErr);
+            std::cout << "Results for file '" << openPath << "':" << std::endl;
+            std::cout << "Error? " << (isErr ? "True" : "False") << std::endl;
+            std::cout << (isErr ? "Error: " : "Parse result: ") << resultStringHandle.inner << std::endl;
           }
-          ImGui::EndMenu();
+        }
+        ImGui::EndMenu();
       }
       ImGui::EndMenuBar();
     }
@@ -165,21 +222,40 @@ int main(void) {
                 }
             }
             bool modified = modifiedPaths[i];
+
             if (modified)
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(.3f, .4f, 1, 1));
-            ImGui::PushID(openPaths[i]);
-            if(ImGui::Selectable(openPaths[i] + lastSlash + 1, openAtRender == i, 0, ImVec2(150, 20))){
+            ImGui::PushID(100 + i * 2);
+            if(ImGui::Selectable(openPaths[i] + lastSlash + 1, openAtRender == i, 0, ImVec2(120, 20))){
                 std::string editorContent = editor.GetText();
                 contents[openIndex] = editorContent.substr(0, editorContent.size() - 1);
                 openIndex = i;
                 editor.SetText(contents.size() == openPaths.size() ? contents[openIndex] : load_from_path(openPaths[i]));
             }
-            ImGui::PopID();
             if (modified)
                 ImGui::PopStyleColor();
+
+            ImGui::PopID();
+            ImGui::SetCursorPosX(130);
+            ImGui::SetCursorPosY(30 + 20 * i);
+            ImGui::PushID(100 + (i * 2) + 1);
+            if (ImGui::Button("X", ImVec2(20, 20))) {
+              openPaths.erase(openPaths.begin() + i);
+              if (openIndex == i) {
+                  openIndex--;
+                  if (openIndex != -1)
+                    editor.SetText(contents[openIndex]);
+                  else
+                    editor.SetText("#Open a file in the menu to begin");
+              }
+            }
+            ImGui::PopID();
+
         }
     }
     ImGui::SetCursorPos(ImVec2(150, 20));
+
+    //editor
     editor.Render("TextEditor", ImVec2(450,580));
     if(ImGui::IsItemFocused() && keyUpInFrame && openIndex != -1){
         modifiedPaths[openIndex] = true;
