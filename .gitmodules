@@ -13,4 +13,4 @@
 	branch = docking
 [submodule "lib/imguicolortextedit"]
 	path = lib/imguicolortextedit
-	url = https://github.com/balazsjako/imguicolortextedit
+	url = https://github.com/cmsteffey/ImGuiColorTextEdit

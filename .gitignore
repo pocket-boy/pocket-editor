@@ -15,7 +15,16 @@ CMakeUserPresets.json
 ## Build files for CMake
 .cache
 /build
+pocket-editor
+libcompiler_ffi.a
 
 ## Dear ImGui artifacts
 imgui.ini
 imgui*.ini
+
+##CLion stuff
+.idea
+
+##Rust stuff
+/cargo
+/corrosion
