@@ -35,6 +35,7 @@ add_executable(
   pocket-editor
   src/editor.cpp
   src/compiler.cpp
+  src/editor.hpp
   include/compiler.hpp
   # Dear ImGui
   lib/imgui/backends/imgui_impl_sdl3.cpp
@@ -50,7 +51,8 @@ add_executable(
   lib/imgui/misc/cpp/imgui_stdlib.h
   # ImGuiColorTextEdit
   lib/imguicolortextedit/TextEditor.cpp
-  lib/imguicolortextedit/TextEditor.h)
+  lib/imguicolortextedit/TextEditor.h
+        src/editor.hpp)
 
 # Include Pocket Compiler bindings for C++.
 target_include_directories(pocket-editor PRIVATE include)

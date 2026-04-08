@@ -11,31 +11,38 @@
 #include <iostream>
 #include <stdlib.h>
 #include "TextEditor.h"
+#include "editor.hpp"
 #include <vector>
+#include <dirent.h>
 #define SDL_HINT_FILE_DIALOG_DRIVER "zenity"
 // Constant definition for default window width.
-#define WIN_WIDTH (250 * 4)
+#define WIN_WIDTH (500 * 4)
 // Constant definition for default window height.
-#define WIN_HEIGHT (150 * 4)
+#define WIN_HEIGHT (300 * 4)
 static void SDLCALL fileopen_callback(void* userdata, const char* const* filelist, int filter);
 static void SDLCALL filesaveas_callback(void* userdata, const char* const* filelist, int filter);
+static void SDLCALL folderopen_callback(void* userdata, const char* const* filelist, int filter);
 static void write_to_path(const char* const path, std::string text);
+static void render_tree(FileNode* node);
 static std::string load_from_path(const char* const path);
 
 // Semaphore held during callbacks and render loop, to synchonize execution of callback functions.
-sem_t renderSemaphore;
+pthread_mutex_t lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
 std::vector<char*> openPaths;
 std::vector<bool> modifiedPaths;
 std::vector<std::string> contents;
+FileNode* openNode = nullptr;
 int openIndex = -1;
 std::string lastCompResult = "";
+
+TextEditor editor;
 int main(void) {
 
-  //Initialize the semaphore before any code, non-process shared with a initial value of 1
-  if(sem_init(&renderSemaphore, 0, 1)){
-    std::cerr << "Sem issue";
-    return 1;
-  }
+  // //Initialize the semaphore before any code, non-process shared with a initial value of 1
+  // if(sem_init(&renderSemaphore, 0, 1)){
+  //   std::cerr << "Sem issue";
+  //   return 1;
+  // }
   // SDL windowing handle.
   SDL_Window *window;
   // SDL rendering handle.
@@ -64,17 +71,17 @@ int main(void) {
   // Initialise the Dear ImGui systems and set configuration flags.
   ImGui::CreateContext();
   ImGuiIO &io = ImGui::GetIO();
+  io.FontGlobalScale = 2;
 
   // Enable Keyboard controls.
-  io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+  //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
   // Enable Gamepad controls.
-  io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+  //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
 
   // Synchronise ImGui with the SDL3 renderer.
   ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
   ImGui_ImplSDLRenderer3_Init(renderer);
 
-  TextEditor editor;
   TextEditor::LanguageDefinition def;
   def.mAutoIndentation = true;
   def.mCaseSensitive = true;
@@ -134,7 +141,7 @@ int main(void) {
   bool done = false;
   // Main event loop implementation.
   while (!done) {
-    sem_wait(&renderSemaphore);
+    pthread_mutex_lock(&lock);
     // Handle for tracking SDL events within event loop.
     SDL_Event event;
     bool keyUpInFrame = false;
@@ -172,9 +179,16 @@ int main(void) {
         if(ImGui::MenuItem("Open...", "Ctrl-O")){
           SDL_ShowOpenFileDialog(fileopen_callback, &editor, window, nullptr, 0, nullptr, false);
         }
+        if(ImGui::MenuItem("Open Folder...", "Ctrl-Shift-O")){
+          //TODO: Free openNode recursively?
+
+          delete openNode;
+          openNode = nullptr;
+          SDL_ShowOpenFolderDialog(folderopen_callback, &openNode, window, nullptr, false);
+        }
         if(ImGui::MenuItem("Save", "Ctrl-S")){
           if(openIndex == -1){
-            SDL_ShowSaveFileDialog(filesaveas_callback, &editor, window, nullptr, 0, nullptr);
+            SDL_ShowSaveFileDialog(filesaveas_callback, &openNode, window, nullptr, 0, nullptr);
           } else {
             write_to_path(openPaths[openIndex], editor.GetText());
             contents[openIndex] = editor.GetText();
@@ -188,6 +202,7 @@ int main(void) {
       }
       if(ImGui::BeginMenu("Run")){
         if (ImGui::MenuItem("Run File", "F6")){
+          contents[openIndex] = editor.GetText();
           handle.drop_module(openPaths[openIndex]);
           std::cout << "File name: " << openPaths[openIndex] << std::endl;
           std::cout << "File content: " << contents[openIndex] << std::endl;
@@ -207,12 +222,18 @@ int main(void) {
       ImGui::EndMenuBar();
     }
 
+    ImGui::BeginChild("FileTree", ImVec2(250, 0), 1, ImGuiWindowFlags_HorizontalScrollbar);
+    if (openNode != nullptr) {
+      render_tree(openNode);
+    }
+    ImGui::EndChild();
     if (openIndex == -1){
-        ImGui::Selectable("  ^ Open a file", false, ImGuiSelectableFlags_::ImGuiSelectableFlags_Disabled, ImVec2(150, 20));
+        //ImGui::Selectable("  ^ Open a file", false, ImGuiSelectableFlags_::ImGuiSelectableFlags_Disabled, ImVec2(150, 20));
     } else {
         int openAtRender = openIndex;
         for (int i = 0; i < openPaths.size(); ++i) {
-            ImGui::SetCursorPosX(0);
+
+            ImGui::SetCursorPos(ImVec2(120 + 160 * (i+1), 40));
 
             int lastSlash = -1;
             int pathLength = strlen(openPaths[i]);
@@ -226,20 +247,32 @@ int main(void) {
             if (modified)
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(.3f, .4f, 1, 1));
             ImGui::PushID(100 + i * 2);
-            if(ImGui::Selectable(openPaths[i] + lastSlash + 1, openAtRender == i, 0, ImVec2(120, 20))){
+
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+            ImGui::SetNextItemAllowOverlap();
+            if(ImGui::Selectable(openPaths[i] + lastSlash + 1, openAtRender == i, 0, ImVec2(145, 40))){
                 std::string editorContent = editor.GetText();
                 contents[openIndex] = editorContent.substr(0, editorContent.size() - 1);
                 openIndex = i;
+                std::cout << "Tab Selected!" << std::endl;
                 editor.SetText(contents.size() == openPaths.size() ? contents[openIndex] : load_from_path(openPaths[i]));
             }
+            ImGui::PopStyleVar(2);
+
             if (modified)
                 ImGui::PopStyleColor();
 
             ImGui::PopID();
-            ImGui::SetCursorPosX(130);
-            ImGui::SetCursorPosY(30 + 20 * i);
+            ImGui::SameLine(0, 0);
+
+            ImGui::SetCursorPos(ImVec2(120 + 160 * (i+1) + 145, 40));
             ImGui::PushID(100 + (i * 2) + 1);
-            if (ImGui::Button("X", ImVec2(20, 20))) {
+            ImGui::SetNextItemAllowOverlap();
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 0));
+            if (ImGui::Selectable("x", openAtRender == i, 0, ImVec2(15, 40))) {
+
               openPaths.erase(openPaths.begin() + i);
               if (openIndex == i) {
                   openIndex--;
@@ -249,14 +282,15 @@ int main(void) {
                     editor.SetText("#Open a file in the menu to begin");
               }
             }
+            ImGui::PopStyleVar(2);
             ImGui::PopID();
 
         }
     }
-    ImGui::SetCursorPos(ImVec2(150, 20));
+    ImGui::SetCursorPos(ImVec2(280, 100));
 
     //editor
-    editor.Render("TextEditor", ImVec2(450,580));
+    editor.Render("TextEditor", ImVec2(ImGui::GetWindowWidth() - 320,ImGui::GetWindowHeight() - 120));
     if(ImGui::IsItemFocused() && keyUpInFrame && openIndex != -1){
         modifiedPaths[openIndex] = true;
     }
@@ -269,7 +303,7 @@ int main(void) {
     SDL_RenderClear(renderer);
     ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
     SDL_RenderPresent(renderer);
-    sem_post(&renderSemaphore);
+    pthread_mutex_unlock(&lock);
   }
 
   // Cleanup all relevant ImGui subsystems.
@@ -284,29 +318,104 @@ int main(void) {
 
   return 0;
 }
+static void fill_node(FileNode* node, std::string folderPath);
+static void SDLCALL folderopen_callback(void* userdata, const char* const* filelist, int filter) {
+  std::cout << "Waiting on semaphore" << std::endl;
+  pthread_mutex_lock(&lock);
+  if (filelist[0] == NULL || filelist[0][0] == '\0') {
+    pthread_mutex_unlock(&lock);
+    return;
+  }
+  std::cout << "Filling node with " << filelist[0] << std::endl;
+  fill_node(nullptr, std::string(filelist[0]));
+  std::cout << "Filled!";
+  pthread_mutex_unlock(&lock);
+}
+static void fill_node(FileNode* node, std::string folderPath) {
+  if (node == nullptr) {
+    node = openNode = new FileNode();
+    node->name = std::string(folderPath.substr(folderPath.find_last_of('/') + 1));
+    node->isDir = true;
+    node->isExpanded = true;
+  }
+  DIR* dir = opendir(folderPath.c_str());
+  struct dirent *ent;
+  if (dir != NULL) {
+    while ((ent = readdir(dir)) != NULL) {
+      std::cout << ent->d_name << std::endl;
+      if (!strcmp(ent->d_name, ".") || !strcmp(ent->d_name, "..")) {
+        continue;
+      }
+      if (ent->d_type == DT_DIR) {
+        std::cout << "It's a folder: " << ent->d_name << std::endl;
+        FileNode* newNode = new FileNode();
+        newNode->name = std::string(ent->d_name);
+        newNode->isDir = true;
+        newNode->isExpanded = false;
+        node->nodes.push_back(newNode);
+        fill_node(newNode, folderPath + "/" + newNode->name);
+      } else if (ent->d_type == DT_REG) {
+        std::cout << "It's a file: " << ent->d_name << std::endl;
+        FileNode* newNode = new FileNode();
+        newNode->name = std::string(ent->d_name);
+        newNode->path = folderPath + "/" + newNode->name;
+        newNode->isDir = false;
+        newNode->isExpanded = false;
+        node->nodes.push_back(newNode);
+      }
+    }
+  }
+}
+static void render_tree(FileNode* node) {
+  if (ImGui::TreeNode(node->name.c_str())) {
+    if (node->isDir) {
+      for (FileNode* child : node->nodes) {
+        if (child->isDir) {
+          render_tree(child);
+        }
+        else {
+          ImGui::PushID(child->path.c_str());
+          ImGui::Selectable(child->name.c_str());
+          ImGui::PopID();
+          if (ImGui::IsItemClicked()) {
+            const char* cPath = child->path.c_str();
+            fileopen_callback((void*)&editor, &cPath, 0);
+          }
+        }
+      }
+    }
+    ImGui::TreePop();
+  }
+
+}
 static void SDLCALL fileopen_callback(void* userdata, const char* const* filelist, int filter){
-  sem_wait(&renderSemaphore);
+  std::cout << "Waiting on file semaphore" << std::endl;
+
+  pthread_mutex_lock(&lock);
+  std::cout << "Finally got in" << std::endl;
   if(filelist == nullptr){
     std::cerr << "SDL error when opening file prompt: " << SDL_GetError() << std::endl;
-    sem_post(&renderSemaphore);
+    pthread_mutex_unlock(&lock);
     return;
   }
   if(*filelist == nullptr || *filelist[0] == '\0'){
     std::cerr << "Someone canceled..." << std::endl;
-    sem_post(&renderSemaphore);
+    pthread_mutex_unlock(&lock);
     return;
   }
 
-    if (openIndex != -1)
-        contents[openIndex] = ((TextEditor*)userdata)->GetText();
+  if (openIndex != -1) {
+    std::string editorContent = ((TextEditor*)userdata)->GetText();
+    contents[openIndex] = editorContent.empty() || editorContent.back() != '\n'? editorContent : editorContent.substr(0, editorContent.size() - 1);
+  }
   for(int i = 0; i < openPaths.size(); ++i){
-      if (!strcmp(openPaths[i], filelist[0])){
-          std::cout << "Open at pos " << i << std::endl;
-          openIndex = i;
-          ((TextEditor*)userdata)->SetText(load_from_path(openPaths[i]));
-          sem_post(&renderSemaphore);
-          return;
-      }
+    if (!strcmp(openPaths[i], filelist[0])){
+      std::cout << "Open at pos " << i << std::endl;
+      openIndex = i;
+      ((TextEditor*)userdata)->SetText(load_from_path(openPaths[i]));
+      pthread_mutex_unlock(&lock);
+      return;
+    }
   }
   std::string fileContent = load_from_path(filelist[0]);
 
@@ -319,19 +428,19 @@ static void SDLCALL fileopen_callback(void* userdata, const char* const* filelis
   modifiedPaths.push_back(false);
 
   ((TextEditor*)userdata)->SetText(load_from_path(openedPath));
-  sem_post(&renderSemaphore);
+  pthread_mutex_unlock(&lock);
   return;
 }
 static void SDLCALL filesaveas_callback(void* userdata, const char* const* filelist, int filter){
-  sem_wait(&renderSemaphore);
+  pthread_mutex_lock(&lock);
   if(filelist == nullptr) {
     std::cerr << "SDL error when opening file prompt: " << SDL_GetError() << std::endl;
-    sem_post(&renderSemaphore);
+    pthread_mutex_unlock(&lock);
     return;
   }
   if(*filelist == nullptr || *filelist == ""){
     std::cerr << "Someone canceled..." << std::endl;
-    sem_post(&renderSemaphore);
+    pthread_mutex_unlock(&lock);
     return;
   }
   std::string content = (*((TextEditor *)userdata)).GetText();
@@ -346,7 +455,7 @@ static void SDLCALL filesaveas_callback(void* userdata, const char* const* filel
   openIndex = openPaths.size() - 1;
   modifiedPaths.push_back(false);
   contents.push_back(content);
-  sem_post(&renderSemaphore);
+  pthread_mutex_unlock(&lock);
 }
 static void write_to_path(const char* const path, std::string text){
   std::ofstream file(path);

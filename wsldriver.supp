@@ -1,0 +1,23 @@
+{
+  ignore_all_nvwgf2umx_4
+  Memcheck:Addr4
+  obj:*/libnvwgf2umx.so
+}
+
+{
+  ignore_all_nvwgf2umx_8
+  Memcheck:Addr8
+  obj:*/libnvwgf2umx.so
+}
+
+{
+  ignore_all_nvwgf2umx_2
+  Memcheck:Addr2
+  obj:*/libnvwgf2umx.so
+}
+
+{
+  ignore_all_nvwgf2umx_1
+  Memcheck:Addr1
+  obj:*/libnvwgf2umx.so
+}
