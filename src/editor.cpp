@@ -9,6 +9,7 @@
 #include <fstream>
 #include <fstream>
 #include <iostream>
+#include <unistd.h>
 #include <stdlib.h>
 #include "TextEditor.h"
 #include "editor.hpp"
@@ -71,6 +72,7 @@ int main(void) {
   // Initialise the Dear ImGui systems and set configuration flags.
   ImGui::CreateContext();
   ImGuiIO &io = ImGui::GetIO();
+  io.DeltaTime = 0.01;
   io.FontGlobalScale = 2;
 
   // Enable Keyboard controls.
@@ -133,7 +135,7 @@ int main(void) {
   editor.SetHandleKeyboardInputs(true);
   //editor.SetColorizerEnable(true);
   SDL_StartTextInput(window);
-
+  std::string errorString = "";
   CompilerHandle handle;
   std::unordered_map<std::string, std::string> compiledModules;
 
@@ -208,20 +210,52 @@ int main(void) {
           std::cout << "File content: " << contents[openIndex] << std::endl;
           std::cout << "Load result: " << handle.load_module(openPaths[openIndex], contents[openIndex].substr(0, contents[openIndex].size() - 1).c_str()) << std::endl;
           ResultHandle result = handle.try_build();
-          bool isErr;
 
-          for (auto openPath : openPaths) {
-            StringHandle resultStringHandle = result.module(openPaths[openIndex], &isErr);
+          bool isErr;
+          std::vector<std::string> errors;
+          //for (auto openPath : openPaths) {
+            //TODO: When changing to module system, switch to loop
+            auto openPath = openPaths[openIndex];
+            StringHandle resultStringHandle = result.module(openPath, &isErr);
             std::cout << "Results for file '" << openPath << "':" << std::endl;
             std::cout << "Error? " << (isErr ? "True" : "False") << std::endl;
-            std::cout << (isErr ? "Error: " : "Parse result: ") << resultStringHandle.inner << std::endl;
+            if (isErr) {
+              errors.push_back("Error in file " + std::string(openPath) + ": " + resultStringHandle.inner);
+            }
+          //}
+          if (errors.size() > 0) {
+            std::cout << "Had " << errors.size() << " error(s)!" << std::endl;
+            //Set error popup
+            errorString = "Errors:";
+            for (int i = 0; i < errors.size(); ++i) {
+              errorString += "\n" + errors[i];
+            }
+            std::cout << errorString << std::endl;
+            ImGui::OpenPopup("ErrorModal");
+          } else {
+            std::string path = openPath;
+            auto result = fork();
+            if (result == -1) {
+              std::cout << "FORK FAIL" << std::endl << std::flush;
+              exit(1);
+            }
+            if (result == 0) {
+              //child!
+              const char * const childArgs[] = {"pocket-interpreter_cli", path.c_str(), nullptr};
+              auto execError= execv("/root/projects/pocket-interpreter/pocket-interpreter_cli", const_cast<char * const *>(childArgs));
+              std::cout << execError << std::flush << std::endl;
+              _exit(0);
+            }
           }
         }
         ImGui::EndMenu();
       }
       ImGui::EndMenuBar();
     }
-
+    if (ImGui::BeginPopupModal("ErrorModal")) {
+      ImGui::Text("%s", errorString.c_str());
+      ImGui::EndPopup();
+    }
     ImGui::BeginChild("FileTree", ImVec2(250, 0), 1, ImGuiWindowFlags_HorizontalScrollbar);
     if (openNode != nullptr) {
       render_tree(openNode);

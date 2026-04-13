@@ -28,7 +28,8 @@ add_subdirectory(lib/SDL EXCLUDE_FROM_ALL)
 add_subdirectory(lib/SDL_image EXCLUDE_FROM_ALL)
 
 # Import targets defined in the Pocket Compiler library.
-corrosion_import_crate(MANIFEST_PATH lib/pocket-compiler/Cargo.toml)
+corrosion_import_crate(MANIFEST_PATH ${CMAKE_SOURCE_DIR}/lib/pocket-compiler/Cargo.toml)
+corrosion_print_target_properties(pocket-compiler)
 
 # Compile the editor executable.
 add_executable(
