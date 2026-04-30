@@ -26,7 +26,8 @@ static void SDLCALL folderopen_callback(void* userdata, const char* const* filel
 static void write_to_path(const char* const path, std::string text);
 static void render_tree(FileNode* node);
 static std::string load_from_path(const char* const path);
-
+static int frame = 0;
+static std::time_t second = std::time(nullptr);
 // Semaphore held during callbacks and render loop, to synchonize execution of callback functions.
 pthread_mutex_t lock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
 std::vector<char*> openPaths;
@@ -35,7 +36,7 @@ std::vector<std::string> contents;
 FileNode* openNode = nullptr;
 int openIndex = -1;
 std::string lastCompResult = "";
-
+int activateError = 0;
 TextEditor editor;
 int main(void) {
 
@@ -92,25 +93,26 @@ int main(void) {
   def.mCommentStart = "*/";
 
   def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("(return|def|var|local|const|import|if|for|while|else|match|case|int|u8|u16|let|unit)", TextEditor::PaletteIndex::Keyword));
+  def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("(render)", TextEditor::PaletteIndex::KnownIdentifier));
+
   def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("[\\. \\t]([A-Za-z0-9_]+)\\(", TextEditor::PaletteIndex::MethodCall));
 
   def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("([,;:\\(\\)<>]|->)", TextEditor::PaletteIndex::Punctuation));
   def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("([A-Z][A-Z0-9_]*?)([\\.,;\\(\\) ]|$)", TextEditor::PaletteIndex::Constant));
   def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("([A-Z][A-Za-z0-9_]*?)([\\.,;\\(\\) ]|$)", TextEditor::PaletteIndex::TypeName));
   def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("([^A-Za-z_][0-9]+)", TextEditor::PaletteIndex::NumericalConstant));
-  def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("(render)", TextEditor::PaletteIndex::KnownIdentifier));
   def.mTokenRegexStrings.push_back(std::make_pair<std::string, TextEditor::PaletteIndex>("(\\\"(\\\\.|[^\\\"])*\\\")", TextEditor::PaletteIndex::String));
   def.mName = "PocketScript";
 
   editor.SetLanguageDefinition(def);
   TextEditor::Palette colors = { {
-    0xff7f7f7f,	// Default
-    0xffd69c56,	// Keyword
-    0xff00ff00,	// Number
-    0xff7070e0,	// String
+    0xff7f7f7f, // Default
+    0xffd69c56, // Keyword
+    0xff00ff00, // Number
+    0xff7070e0, // String
     0xff70a0e0, // Char literal
     0xff6f6f6f, // Punctuation
-    0xff408080,	// Preprocessor
+    0xff408080, // Preprocessor
     0xffaaaaaa, // Identifier
     0xffa3d653, // Known identifier
     0xffc040a0, // Preproc identifier
@@ -206,6 +208,7 @@ int main(void) {
         if (ImGui::MenuItem("Run File", "F6")){
           contents[openIndex] = editor.GetText();
           handle.drop_module(openPaths[openIndex]);
+          write_to_path(openPaths[openIndex], editor.GetText());
           std::cout << "File name: " << openPaths[openIndex] << std::endl;
           std::cout << "File content: " << contents[openIndex] << std::endl;
           std::cout << "Load result: " << handle.load_module(openPaths[openIndex], contents[openIndex].substr(0, contents[openIndex].size() - 1).c_str()) << std::endl;
@@ -231,7 +234,7 @@ int main(void) {
               errorString += "\n" + errors[i];
             }
             std::cout << errorString << std::endl;
-            ImGui::OpenPopup("ErrorModal");
+            activateError = 1;
           } else {
             std::string path = openPath;
             auto result = fork();
@@ -242,7 +245,7 @@ int main(void) {
             if (result == 0) {
               //child!
               const char * const childArgs[] = {"pocket-interpreter_cli", path.c_str(), nullptr};
-              auto execError= execv("/root/projects/pocket-interpreter/pocket-interpreter_cli", const_cast<char * const *>(childArgs));
+              auto execError= execv("/root/ghosts/pocket-interpreter/build/pocket-interpreter_cli", const_cast<char * const *>(childArgs));
               std::cout << execError << std::flush << std::endl;
               _exit(0);
             }
@@ -252,8 +255,15 @@ int main(void) {
       }
       ImGui::EndMenuBar();
     }
+    if (activateError){
+      activateError = 0;
+      ImGui::OpenPopup("ErrorModal");
+    }
     if (ImGui::BeginPopupModal("ErrorModal")) {
       ImGui::Text("%s", errorString.c_str());
+      if(ImGui::Button("Close")){
+        ImGui::CloseCurrentPopup();
+      }
       ImGui::EndPopup();
     }
     ImGui::BeginChild("FileTree", ImVec2(250, 0), 1, ImGuiWindowFlags_HorizontalScrollbar);
@@ -336,8 +346,14 @@ int main(void) {
     // ...and then send ImGui's data to the SDL renderer.
     SDL_RenderClear(renderer);
     ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
-    SDL_RenderPresent(renderer);
     pthread_mutex_unlock(&lock);
+    SDL_RenderPresent(renderer);
+    frame += 1;
+    if(std::time(nullptr) != second){
+      second = std::time(nullptr);
+      //std::cout << frame << std::endl;
+      frame = 0;
+    }
   }
 
   // Cleanup all relevant ImGui subsystems.
