@@ -1,47 +1,79 @@
 #include "compiler.hpp"
+#include <memory>
 
-extern "C" void drop_string(const char *);
+extern "C" {
+void drop_string(const char *);
 
-extern "C" void drop_result(void *);
+void drop_result(void *);
 
-extern "C" const char *result_module(void *, const char *, bool *);
+const char *result_module(void *, const char *, bool *);
 
-extern "C" void *init_compiler(void);
+void *init_compiler(void);
 
-extern "C" void drop_compiler(void *);
+void drop_compiler(void *);
 
-extern "C" bool drop_module(void *, const char *);
+bool drop_module(void *, const char *);
 
-extern "C" bool load_module(void *, const char *, const char *);
+bool load_module(void *, const char *, const char *);
 
-extern "C" bool bind_module(void *, const char *, const char *);
+bool bind_module(void *, const char *, const char *);
 
-extern "C" void *try_build(void *);
-
-StringHandle::~StringHandle(void) { ::drop_string(this->inner); }
-
-ResultHandle::~ResultHandle(void) { ::drop_result(this->handle); }
-
-StringHandle ResultHandle::module(const char *name, bool *is_err) {
-  return StringHandle(::result_module(this->handle, name, is_err));
+void *try_build(void *);
 }
 
-CompilerHandle::CompilerHandle(void) { this->handle = init_compiler(); }
+void StringHandleDeleter::operator()(const char *inner) const {
+  ::drop_string(inner);
+}
 
-CompilerHandle::~CompilerHandle(void) { drop_compiler(this->handle); }
+void ResultHandleDeleter::operator()(void *handle) const {
+  ::drop_result(handle);
+}
+
+void CompilerHandleDeleter::operator()(void *handle) const {
+  ::drop_compiler(handle);
+}
+
+StringHandle &StringHandle::operator=(StringHandle &&other) {
+  if (this != &other) {
+    this->inner = std::move(other.inner);
+  }
+  return *this;
+}
+
+ResultHandle &ResultHandle::operator=(ResultHandle &&other) {
+  if (this != &other) {
+    this->handle = std::move(other.handle);
+  }
+  return *this;
+}
+
+StringHandle ResultHandle::module(const char *name, bool *is_err) {
+  return StringHandle(::result_module(this->handle.get(), name, is_err));
+}
+
+CompilerHandle::CompilerHandle(void) {
+  this->handle = std::unique_ptr<void, CompilerHandleDeleter>(init_compiler());
+}
+
+CompilerHandle &CompilerHandle::operator=(CompilerHandle &&other) {
+  if (this != &other) {
+    this->handle = std::move(other.handle);
+  }
+  return *this;
+}
 
 bool CompilerHandle::drop_module(const char *name) {
-  return ::drop_module(this->handle, name);
+  return ::drop_module(this->handle.get(), name);
 }
 
 bool CompilerHandle::load_module(const char *name, const char *content) {
-  return ::load_module(this->handle, name, content);
+  return ::load_module(this->handle.get(), name, content);
 }
 
 bool CompilerHandle::bind_module(const char *name, const char *content) {
-  return ::bind_module(this->handle, name, content);
+  return ::bind_module(this->handle.get(), name, content);
 }
 
 ResultHandle CompilerHandle::try_build(void) {
-  return ResultHandle(::try_build(this->handle));
+  return ResultHandle(::try_build(this->handle.get()));
 }
